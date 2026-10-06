@@ -89,6 +89,7 @@ import ArravSupplier, { ARRAV_SUPPLIER_SETTINGS } from './ArravSupplier/ArravSup
 import Barcrawl from './Barcrawl/Barcrawl.js';
 import DuelArena, { DUEL_ARENA_SETTINGS } from './DuelArena/DuelArena.js';
 import WanderLooter, { SETTINGS as WANDER_LOOTER_SETTINGS } from './WanderLooter/WanderLooter.js';
+import MuleTrader, { MULETRADER_SETTINGS } from './MuleTrader/MuleTrader.js';
 
 // First register = panel default when no script is remembered (BotPanel → list()[0]).
 ScriptRegistry.register({
@@ -900,4 +901,14 @@ ScriptRegistry.register({
     tags: ['loot', 'wandering', 'banking', 'food', 'event', 'pumpkin'],
     settingsSchema: WANDER_LOOTER_SETTINGS,
     create: () => new WanderLooter()
+});
+
+ScriptRegistry.register({
+    name: 'MuleTrader',
+    version: '0.1.0',
+    description: 'Withdraws noted item and trades it to a player',
+    category: 'Other',
+    tags: ['trade', 'bank'],
+    settingsSchema: MULETRADER_SETTINGS,
+    create: () => new MuleTrader(),
 });
