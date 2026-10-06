@@ -20,6 +20,23 @@ the screen, so a bot's packets match a human click byte for byte.
 Log in with an rs2b2t account, pick a script, run. Keep the tab visible, a backgrounded
 tab is throttled by the browser, which starves every bot in it.
 
+## My changes
+
+My changes (ineedbots) are:
+- Pressing enter on the login screen at the password prompt will attempt a login
+- All anti macro removed, no more random camera and minimap nudges
+- Mouse scrolling will:
+  - Scroll interfaces
+  - Zoom the world
+  - Zoom the minimap
+- Reordered the menu options, with CTRL and SHIFT modifiers
+- Clicking the compass will reset the camera angle and zoom
+- Dragging with middle mouse button on the world will control the camera pitch and yaw
+- Added MuleTrader script
+- Added minimap orbs, HP, prayer, run and spec. Run and spec are clickable
+
+Clauded...
+
 ## What it does
 
 | | |
