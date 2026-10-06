@@ -213,7 +213,7 @@ export default class PixFont extends Linkable2 {
 
         this.rand.setSeed(seed);
 
-        const rand: number = (this.rand.nextInt() & 0x1f) + 192;
+        const rand: number = (0 & 0x1f) + 192;
         const offY: number = y - this.height;
         for (let i: number = 0; i < str.length; i++) {
             if (str.charAt(i) === '@' && i + 4 < str.length && str.charAt(i + 4) === '@') {
@@ -233,7 +233,7 @@ export default class PixFont extends Linkable2 {
                 }
 
                 x += this.charAdvance[c];
-                if ((this.rand.nextInt() & 0x3) === 0) {
+                if ((1 & 0x3) === 0) {
                     x++;
                 }
             }

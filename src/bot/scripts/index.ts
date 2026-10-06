@@ -86,6 +86,7 @@ import GnomeMagicChopper, { GNOME_MAGIC_CHOPPER_SETTINGS } from './GnomeMagicCho
 import ArravSupplier, { ARRAV_SUPPLIER_SETTINGS } from './ArravSupplier/ArravSupplier.js';
 import Barcrawl from './Barcrawl/Barcrawl.js';
 import DuelArena, { DUEL_ARENA_SETTINGS } from './DuelArena/DuelArena.js';
+import MuleTrader, { MULETRADER_SETTINGS } from './MuleTrader/MuleTrader.js';
 
 // First register = panel default when no script is remembered (BotPanel → list()[0]).
 ScriptRegistry.register({
@@ -871,4 +872,14 @@ ScriptRegistry.register({
     tags: ['training', 'combat', 'skilling', 'quests', 'banking', 'death-recovery'],
     settingsSchema: ACCOUNT_LEVELER_SETTINGS,
     create: () => new AccountLeveler()
+});
+
+ScriptRegistry.register({
+    name: 'MuleTrader',
+    version: '0.1.0',
+    description: 'Withdraws noted item and trades it to a player',
+    category: 'Other',
+    tags: ['trade', 'bank'],
+    settingsSchema: MULETRADER_SETTINGS,
+    create: () => new MuleTrader(),
 });

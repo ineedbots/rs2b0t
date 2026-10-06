@@ -86,6 +86,23 @@ const SCROLLBAR_GRIP_FOREGROUND = 0x4d4233;
 const SCROLLBAR_GRIP_HIGHLIGHT = 0x766654;
 const SCROLLBAR_GRIP_LOWLIGHT = 0x332d25;
 
+// World view zoom is the projection focal length (Pix3D.zoom); higher = narrower FOV
+const WORLD_ZOOM_DEFAULT = 512;
+const WORLD_ZOOM_MIN = 128;
+const WORLD_ZOOM_MAX = 2048;
+const WORLD_ZOOM_STEP = 32;
+
+// Minimap zoom is the map's sample step, minimapZoom + 256 (256 = 4px per tile); lower = zoomed in
+const MINIMAP_ZOOM_DEFAULT = 251;
+const MINIMAP_ZOOM_MIN = 64; // 2x in
+const MINIMAP_ZOOM_MAX = 512; // 1.5x out; further shows past the loaded 104x104 area
+const MINIMAP_ZOOM_STEP = 0.85; // scale factor per wheel notch
+
+// Middle-mouse camera drag, in camera units per screen pixel (yaw: 2048 = full turn; pitch: 128-383).
+// Directions match touch panning: drag right turns like the left arrow, drag down tilts toward top-down.
+const CAMERA_DRAG_YAW = 2;
+const CAMERA_DRAG_PITCH = 1;
+
 interface LoginAttempt {
     cancelled: boolean;
     stream: ClientStream | null;
@@ -264,6 +281,10 @@ export class Client extends GameShell {
     private macroMinimapZoom: number = 0;
     private macroMinimapZoomModifier: number = 1;
     private macroMinimapCycle: number = 0;
+
+    private minimapZoom: number = MINIMAP_ZOOM_DEFAULT - 256;
+    private minimapZoomTarget: number = MINIMAP_ZOOM_DEFAULT - 256; // minimapZoom eases toward this each tick
+    private worldZoom: number = WORLD_ZOOM_DEFAULT;
 
     private worldUpdateNum: number = 0;
 
@@ -1248,7 +1269,7 @@ export class Client extends GameShell {
                 distance[x] = (offset * sin) >> 16;
             }
 
-            World.resetVisCalc(distance, 500, 800, 512, 334);
+            World.resetVisCalc(distance, 500, 800, 512, 334, WORLD_ZOOM_MIN);
             WordFilter.unpack(wordenc);
 
             if (!this.mouseTrackingInterval) {
@@ -1481,7 +1502,10 @@ export class Client extends GameShell {
                     }
 
                     if (key === 9 || key === 10 || key === 13) {
-                        this.loginSelect = 0;
+                        // this.loginSelect = 0;
+                        
+                        this.startLogin(this.loginUser, this.loginPass);
+                        return;
                     }
 
                     if (valid) {
@@ -2626,6 +2650,31 @@ export class Client extends GameShell {
             this.out.p1Enc(ClientProt.NO_TIMEOUT);
         }
 
+        if (this.wheelRotation !== 0) {
+            if (this.mouseX > 4 && this.mouseY > 4 && this.mouseX < 516 && this.mouseY < 338) {
+                this.worldZoom += this.wheelRotation * WORLD_ZOOM_STEP;
+                if (this.worldZoom < WORLD_ZOOM_MIN) {
+                    this.worldZoom = WORLD_ZOOM_MIN;
+                } else if (this.worldZoom > WORLD_ZOOM_MAX) {
+                    this.worldZoom = WORLD_ZOOM_MAX;
+                }
+            } else if (this.mouseX >= 575 && this.mouseX < 721 && this.mouseY >= 8 && this.mouseY < 159) {
+                // Same rect minimapLoop accepts clicks in. Wheel up = zoom in (smaller sample step).
+                let scale: number = Math.round((this.minimapZoomTarget + 256) * Math.pow(MINIMAP_ZOOM_STEP, this.wheelRotation));
+                if (scale < MINIMAP_ZOOM_MIN) {
+                    scale = MINIMAP_ZOOM_MIN;
+                } else if (scale > MINIMAP_ZOOM_MAX) {
+                    scale = MINIMAP_ZOOM_MAX;
+                }
+                this.minimapZoomTarget = scale - 256;
+            }
+        }
+
+        if (this.minimapZoom !== this.minimapZoomTarget) {
+            const delta: number = this.minimapZoomTarget - this.minimapZoom;
+            this.minimapZoom += Math.abs(delta) < 4 ? delta : (delta / 3) | 0;
+        }
+
         try {
             if (this.stream && this.out.pos > 0) {
                 this.stream.write(this.out.data, this.out.pos);
@@ -2787,6 +2836,57 @@ export class Client extends GameShell {
                 }
             }
         }
+
+        this.sortMenus((a, b) => {
+            const optionA = this.menuOption[a].toLowerCase();
+            const optionB = this.menuOption[b].toLowerCase();
+
+            const optionHasRank = (option: String): number => {
+                if (option.startsWith('bank ')) {
+                    return 1;
+                }
+                if (option.startsWith('use-quickly ')) {
+                    return 1;
+                }
+                if (option.startsWith('withdraw all ')) {
+                    return 1;
+                }
+                if (option.startsWith('deposit all ')) {
+                    return 1;
+                }
+                if (option.startsWith('pickpocket ')) {
+                    return 1;
+                }
+                if (option.startsWith('buy 10 ')) {
+                    return 1;
+                }
+                if (option.startsWith('sell 10 ')) {
+                    return 1;
+                }
+                if (option.startsWith('trade ') && !option.startsWith('trade with ')) {
+                    return 1;
+                }
+                if (option.startsWith('drop ') && this.shiftHeld) {
+                    return 1;
+                }
+                if (option.startsWith('use ') && this.keyHeld[5]) {
+                    return 1;
+                }
+
+                return -1;
+            };
+
+            const aRank = optionHasRank(optionA);
+            const bRank = optionHasRank(optionB);
+            
+            const aIsPriority = aRank !== -1;
+            const bIsPriority = bRank !== -1;
+
+            if (aIsPriority && bIsPriority) return bRank - aRank;
+            if (aIsPriority) return 1;
+            if (bIsPriority) return -1;
+            return 0; // preserve original order
+        });
     }
 
     private addPrivateChatOptions(): void {
@@ -2930,6 +3030,13 @@ export class Client extends GameShell {
     }
 
     minimapLoop(): void {
+        // Compass sprite: 33x33 at the top-left of areaMap (550, 4). Checked first because it
+        // overlaps the minimap click rect, and it works even when the minimap is disabled.
+        if (this.mouseClickButton === 1 && this.mouseClickX >= 550 && this.mouseClickX < 583 && this.mouseClickY >= 4 && this.mouseClickY < 37) {
+            this.resetView();
+            return;
+        }
+
         if (this.minimapState !== 0 || this.mouseClickButton !== 1 || !this.localPlayer) {
             return;
         }
@@ -2944,12 +3051,12 @@ export class Client extends GameShell {
         x -= 73;
         y -= 75;
 
-        const yaw: number = (this.orbitCameraYaw + this.macroMinimapAngle) & 0x7ff;
+        const yaw: number = (this.orbitCameraYaw + 0) & 0x7ff;
         let sinYaw: number = Pix3D.sinTable[yaw];
         let cosYaw: number = Pix3D.cosTable[yaw];
 
-        sinYaw = (sinYaw * (this.macroMinimapZoom + 256)) >> 8;
-        cosYaw = (cosYaw * (this.macroMinimapZoom + 256)) >> 8;
+        sinYaw = (sinYaw * (this.minimapZoom + 256)) >> 8;
+        cosYaw = (cosYaw * (this.minimapZoom + 256)) >> 8;
 
         const relX: number = (y * sinYaw + x * cosYaw) >> 11;
         const relY: number = (y * cosYaw - x * sinYaw) >> 11;
@@ -2970,6 +3077,17 @@ export class Client extends GameShell {
             this.out.p1(this.tryMoveNearest);
             this.out.p1(63);
         }
+    }
+
+    /** Compass click: face north, default pitch, default world + minimap zoom. */
+    private resetView(): void {
+        this.orbitCameraYaw = 0;
+        this.orbitCameraPitch = 128; // the client's starting pitch
+        this.orbitCameraYawVelocity = 0;
+        this.orbitCameraPitchVelocity = 0;
+        this.worldZoom = WORLD_ZOOM_DEFAULT;
+        this.minimapZoomTarget = MINIMAP_ZOOM_DEFAULT - 256;
+        this.sendCamera = true; // report the new camera like arrow-key rotation does
     }
 
     private iconLoop(): void {
@@ -3401,8 +3519,8 @@ export class Client extends GameShell {
             return;
         }
 
-        const orbitX: number = this.localPlayer.x + this.macroCameraX;
-        const orbitZ: number = this.localPlayer.z + this.macroCameraZ;
+        const orbitX: number = this.localPlayer.x + 0;
+        const orbitZ: number = this.localPlayer.z + 0;
 
         if (this.orbitCameraX - orbitX < -500 || this.orbitCameraX - orbitX > 500 || this.orbitCameraZ - orbitZ < -500 || this.orbitCameraZ - orbitZ > 500) {
             this.orbitCameraX = orbitX;
@@ -4362,7 +4480,7 @@ export class Client extends GameShell {
                 pitch = this.camShakeRan[4] + 128;
             }
 
-            const yaw: number = (this.orbitCameraYaw + this.macroCameraAngle) & 0x7ff;
+            const yaw: number = (this.orbitCameraYaw + 0) & 0x7ff;
 
             if (this.localPlayer) {
                 this.camFollow(pitch, yaw, this.orbitCameraX, this.getAvH(this.localPlayer.x, this.localPlayer.z, this.minusedlevel) - 50, this.orbitCameraZ, pitch * 3 + 600);
@@ -4417,7 +4535,10 @@ export class Client extends GameShell {
         Model.mouseY = this.mouseY - 4;
 
         Pix2D.cls();
+        // Zoom applies only to the scene; interface/inventory models keep the default projection
+        Pix3D.zoom = this.worldZoom;
         this.world?.renderAll(this.camX, this.camY, this.camZ, level, this.camYaw, this.camPitch);
+        Pix3D.zoom = WORLD_ZOOM_DEFAULT;
         this.world?.removeSprites();
         // Bot hook: paint into areaGame while Pix2D is still bound to the 3D surface
         // (same projection as the scene; before UI overlays). See BotClient.onAfterWorldRender.
@@ -5252,8 +5373,8 @@ export class Client extends GameShell {
         dy = tmp;
 
         if (dz >= 50) {
-            this.projectX = Pix3D.originX + (((dx << 9) / dz) | 0);
-            this.projectY = Pix3D.originY + (((dy << 9) / dz) | 0);
+            this.projectX = Pix3D.originX + (((dx * this.worldZoom) / dz) | 0);
+            this.projectY = Pix3D.originY + (((dy * this.worldZoom) / dz) | 0);
         } else {
             this.projectX = -1;
             this.projectY = -1;
@@ -9515,6 +9636,35 @@ export class Client extends GameShell {
         this.redrawSide = true;
     }
 
+    private sortMenus(compareFn: (a: number, b: number) => number): void {
+        const length = this.menuNumEntries;
+        const indices = Array.from({ length }, (_, i) => i);
+        indices.sort(compareFn);
+
+        const newOption = new Array<string>(length);
+        const newAction = new Int32Array(length);
+        const newParamA = new Int32Array(length);
+        const newParamB = new Int32Array(length);
+        const newParamC = new Int32Array(length);
+
+        for (let i = 0; i < length; i++) {
+            const src = indices[i];
+            newOption[i] = this.menuOption[src];
+            newAction[i] = this.menuAction[src];
+            newParamA[i] = this.menuParamA[src];
+            newParamB[i] = this.menuParamB[src];
+            newParamC[i] = this.menuParamC[src];
+        }
+
+        for (let i = 0; i < length; i++) {
+            this.menuOption[i] = newOption[i];
+            this.menuAction[i] = newAction[i];
+            this.menuParamA[i] = newParamA[i];
+            this.menuParamB[i] = newParamB[i];
+            this.menuParamC[i] = newParamC[i];
+        }
+    }
+
     private addWorldOptions(): void {
         if (this.useMode === 0 && this.targetMode === 0) {
             this.menuOption[this.menuNumEntries] = 'Walk here';
@@ -11520,11 +11670,11 @@ export class Client extends GameShell {
             return;
         }
 
-        const angle: number = (this.orbitCameraYaw + this.macroMinimapAngle) & 0x7ff;
+        const angle: number = (this.orbitCameraYaw + 0) & 0x7ff;
         let anchorX: number = ((this.localPlayer.x / 32) | 0) + 48;
         let anchorY: number = 464 - ((this.localPlayer.z / 32) | 0);
 
-        this.minimap?.scanlineRotatePlotSprite(25, 5, 146, 151, anchorX, anchorY, angle, this.macroMinimapZoom + 256, this.minimapMaskLineOffsets, this.minimapMaskLineLengths);
+        this.minimap?.scanlineRotatePlotSprite(25, 5, 146, 151, anchorX, anchorY, angle, this.minimapZoom + 256, this.minimapMaskLineOffsets, this.minimapMaskLineLengths);
         this.compass?.scanlineRotatePlotSprite(0, 0, 33, 33, 25, 25, this.orbitCameraYaw, 256, this.compassMaskLineOffsets, this.compassMaskLineLengths);
 
         for (let i: number = 0; i < this.activeMapFunctionCount; i++) {
@@ -11617,21 +11767,27 @@ export class Client extends GameShell {
         }
 
         const distance = dx * dx + dy * dy;
-        if (distance <= 4225 || distance >= 90000) {
+        if (distance >= 90000) {
             this.minimapDrawDot(dy, image, dx);
             return;
         }
 
-        const angle: number = (this.orbitCameraYaw + this.macroMinimapAngle) & 0x7ff;
+        const angle: number = (this.orbitCameraYaw + 0) & 0x7ff;
 
         let sinAngle: number = Pix3D.sinTable[angle];
         let cosAngle: number = Pix3D.cosTable[angle];
 
-        sinAngle = ((sinAngle * 256) / (this.macroMinimapZoom + 256)) | 0;
-        cosAngle = ((cosAngle * 256) / (this.macroMinimapZoom + 256)) | 0;
+        sinAngle = ((sinAngle * 256) / (this.minimapZoom + 256)) | 0;
+        cosAngle = ((cosAngle * 256) / (this.minimapZoom + 256)) | 0;
 
         const x: number = (dy * sinAngle + dx * cosAngle) >> 16;
         const y: number = (dy * cosAngle - dx * sinAngle) >> 16;
+
+        // Marker vs edge arrow is decided on screen distance so it tracks the minimap zoom
+        if (x * x + y * y <= 4225) {
+            this.minimapDrawDot(dy, image, dx);
+            return;
+        }
 
         const var13 = Math.atan2(x, y);
         const var15 = (Math.sin(var13) * 63.0) | 0;
@@ -11645,21 +11801,22 @@ export class Client extends GameShell {
             return;
         }
 
-        const distance: number = dx * dx + dy * dy;
-        if (distance > 6400) {
-            return;
-        }
-
-        const angle: number = (this.orbitCameraYaw + this.macroMinimapAngle) & 0x7ff;
+        const angle: number = (this.orbitCameraYaw + 0) & 0x7ff;
 
         let sinAngle: number = Pix3D.sinTable[angle];
         let cosAngle: number = Pix3D.cosTable[angle];
 
-        sinAngle = ((sinAngle * 256) / (this.macroMinimapZoom + 256)) | 0;
-        cosAngle = ((cosAngle * 256) / (this.macroMinimapZoom + 256)) | 0;
+        sinAngle = ((sinAngle * 256) / (this.minimapZoom + 256)) | 0;
+        cosAngle = ((cosAngle * 256) / (this.minimapZoom + 256)) | 0;
 
         const x: number = (dy * sinAngle + dx * cosAngle) >> 16;
         const y: number = (dy * cosAngle - dx * sinAngle) >> 16;
+
+        // Cull and mask on screen distance so dots stay inside the minimap at any zoom
+        const distance: number = x * x + y * y;
+        if (distance > 6400) {
+            return;
+        }
 
         if (distance > 2500 && this.mapback) {
             image.scanlinePlotSprite(this.mapback, x + 94 - ((image.owi / 2) | 0) + 4, 83 - y - ((image.ohi / 2) | 0) - 4);
@@ -11841,6 +11998,20 @@ export class Client extends GameShell {
     private dragging: boolean = false;
     private panning: boolean = false;
 
+    private cameraDrag: boolean = false;
+    private cameraDragX: number = 0; // last screenX/Y seen while middle-dragging
+    private cameraDragY: number = 0;
+
+    override mouseDown(x: number, y: number, e: MouseEvent) {
+        super.mouseDown(x, y, e);
+
+        if (e.button === 1 && this.insideGame()) {
+            this.cameraDrag = true;
+            this.cameraDragX = e.screenX;
+            this.cameraDragY = e.screenY;
+        }
+    }
+
     override pointerDown(x: number, y: number, e: PointerEvent) {
         if (MobileKeyboard.isWithinCanvasKeyboard(x, y) && !this.exceedsGrabThreshold(20)) {
             MobileKeyboard.captureMouseDown(x, y);
@@ -11867,12 +12038,48 @@ export class Client extends GameShell {
         }
     }
 
-    override mouseUp(x: number, y: number, _e: MouseEvent) {
+    override mouseUp(x: number, y: number, e: MouseEvent) {
         this.idleTimer = performance.now();
-        this.mouseButton = 0;
+        if (e.button !== 1) {
+            this.mouseButton = 0; // releasing middle shouldn't end a left/right hold
+        }
 
         this.mouseX = x;
         this.mouseY = y;
+    }
+
+    // Window-level so the drag keeps working when the cursor leaves the canvas
+    override windowMouseMove(e: MouseEvent) {
+        if (!this.cameraDrag) {
+            return;
+        }
+
+        if ((e.buttons & 4) === 0) {
+            this.cameraDrag = false; // middle was released outside the window
+            return;
+        }
+
+        const dx: number = e.screenX - this.cameraDragX;
+        const dy: number = e.screenY - this.cameraDragY;
+        this.cameraDragX = e.screenX;
+        this.cameraDragY = e.screenY;
+
+        this.orbitCameraYaw = (this.orbitCameraYaw - dx * CAMERA_DRAG_YAW) & 0x7ff;
+        this.orbitCameraPitch += dy * CAMERA_DRAG_PITCH;
+        if (this.orbitCameraPitch < 128) {
+            this.orbitCameraPitch = 128;
+        } else if (this.orbitCameraPitch > 383) {
+            this.orbitCameraPitch = 383;
+        }
+
+        this.idleTimer = performance.now();
+        this.sendCamera = true;
+    }
+
+    override windowMouseUp(e: MouseEvent) {
+        if (e.button === 1) {
+            this.cameraDrag = false;
+        }
     }
 
     override pointerUp(x: number, y: number, e: PointerEvent) {

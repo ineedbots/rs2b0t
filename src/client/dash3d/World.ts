@@ -114,6 +114,8 @@ export default class World {
     static groundZ: number = -1;
 
     private static visBacking: boolean[][][][] = new TypedArray4d(8, 32, 51, 51, false);
+    // Built at the widest zoom; used while Pix3D.zoom < 512 so zooming out doesn't cull visible tiles
+    private static visBackingWide: boolean[][][][] = World.visBacking;
     private static visBackingDirty: boolean[][] | null = null;
 
     static numActiveOccluders: number = 0;
@@ -859,7 +861,7 @@ export default class World {
         }
     }
 
-    static resetVisCalc(pitchDistance: Int32Array, frustumStart: number, frustumEnd: number, viewportWidth: number, viewportHeight: number): void {
+    static resetVisCalc(pitchDistance: Int32Array, frustumStart: number, frustumEnd: number, viewportWidth: number, viewportHeight: number, minZoom: number = 512): void {
         this.xClip = 0;
         this.yClip = 0;
         this.xClip2 = viewportWidth;
@@ -867,6 +869,13 @@ export default class World {
         this.xOrig = (viewportWidth / 2) | 0;
         this.yOrig = (viewportHeight / 2) | 0;
 
+        // A narrower FOV (zoom > 512) only sees a subset of what 512 sees, so one table covers zooming in.
+        this.visBacking = this.buildVisBacking(pitchDistance, frustumStart, frustumEnd, 512);
+        this.visBackingWide = minZoom < 512 ? this.buildVisBacking(pitchDistance, frustumStart, frustumEnd, minZoom) : this.visBacking;
+    }
+
+    private static buildVisBacking(pitchDistance: Int32Array, frustumStart: number, frustumEnd: number, zoom: number): boolean[][][][] {
+        const vis: boolean[][][][] = new TypedArray4d(8, 32, 51, 51, false);
         const visBacking: boolean[][][][] = new TypedArray4d(9, 32, 53, 53, false);
         for (let pitch: number = 128; pitch <= 384; pitch += 32) {
             for (let yaw: number = 0; yaw < 2048; yaw += 64) {
@@ -884,7 +893,7 @@ export default class World {
 
                         let visible: boolean = false;
                         for (let y: number = -frustumStart; y <= frustumEnd; y += 128) {
-                            if (this.testPoint(x, z, pitchDistance[pitchLevel] + y)) {
+                            if (this.testPoint(x, z, pitchDistance[pitchLevel] + y, zoom)) {
                                 visible = true;
                                 break;
                             }
@@ -926,14 +935,16 @@ export default class World {
                             }
                         }
 
-                        this.visBacking[pitchLevel][yawLevel][x + 25][z + 25] = visible;
+                        vis[pitchLevel][yawLevel][x + 25][z + 25] = visible;
                     }
                 }
             }
         }
+
+        return vis;
     }
 
-    private static testPoint(x: number, z: number, y: number): boolean {
+    private static testPoint(x: number, z: number, y: number, zoom: number): boolean {
         const px: number = (z * this.cameraSinY + x * this.cameraCosY) >> 16;
         const tmp: number = (z * this.cameraCosY - x * this.cameraSinY) >> 16;
         const pz: number = (y * this.cameraSinX + tmp * this.cameraCosX) >> 16;
@@ -943,8 +954,8 @@ export default class World {
             return false;
         }
 
-        const viewportX: number = this.xOrig + (((px << 9) / pz) | 0);
-        const viewportY: number = this.yOrig + (((py << 9) / pz) | 0);
+        const viewportX: number = this.xOrig + (((px * zoom) / pz) | 0);
+        const viewportY: number = this.yOrig + (((py * zoom) / pz) | 0);
         return viewportX >= this.xClip && viewportX <= this.xClip2 && viewportY >= this.yClip && viewportY <= this.yClip2;
     }
 
@@ -975,7 +986,7 @@ export default class World {
         World.cameraSinY = Pix3D.sinTable[eyeYaw];
         World.cameraCosY = Pix3D.cosTable[eyeYaw];
 
-        World.visBackingDirty = World.visBacking[((eyePitch - 128) / 32) | 0][(eyeYaw / 64) | 0];
+        World.visBackingDirty = (Pix3D.zoom < 512 ? World.visBackingWide : World.visBacking)[((eyePitch - 128) / 32) | 0][(eyeYaw / 64) | 0];
         World.cx = eyeX;
         World.cy = eyeY;
         World.cz = eyeZ;
@@ -1987,14 +1998,15 @@ export default class World {
             return;
         }
 
-        const px0: number = Pix3D.originX + (((x0 << 9) / z0) | 0);
-        const py0: number = Pix3D.originY + (((y0 << 9) / z0) | 0);
-        const pz0: number = Pix3D.originX + (((x1 << 9) / z1) | 0);
-        const px1: number = Pix3D.originY + (((y1 << 9) / z1) | 0);
-        const py1: number = Pix3D.originX + (((x2 << 9) / z2) | 0);
-        const pz1: number = Pix3D.originY + (((y2 << 9) / z2) | 0);
-        const px3: number = Pix3D.originX + (((x3 << 9) / z3) | 0);
-        const py3: number = Pix3D.originY + (((y3 << 9) / z3) | 0);
+        const zoom: number = Pix3D.zoom;
+        const px0: number = Pix3D.originX + (((x0 * zoom) / z0) | 0);
+        const py0: number = Pix3D.originY + (((y0 * zoom) / z0) | 0);
+        const pz0: number = Pix3D.originX + (((x1 * zoom) / z1) | 0);
+        const px1: number = Pix3D.originY + (((y1 * zoom) / z1) | 0);
+        const py1: number = Pix3D.originX + (((x2 * zoom) / z2) | 0);
+        const pz1: number = Pix3D.originY + (((y2 * zoom) / z2) | 0);
+        const px3: number = Pix3D.originX + (((x3 * zoom) / z3) | 0);
+        const py3: number = Pix3D.originY + (((y3 * zoom) / z3) | 0);
 
         Pix3D.trans = 0;
 
@@ -2092,6 +2104,7 @@ export default class World {
 
     private renderGround(tileX: number, tileZ: number, ground: Ground, sinEyePitch: number, cosEyePitch: number, sinEyeYaw: number, cosEyeYaw: number): void {
         let vertexCount: number = ground.vertexX.length;
+        const zoom: number = Pix3D.zoom;
 
         for (let i: number = 0; i < vertexCount; i++) {
             let x: number = ground.vertexX[i] - World.cx;
@@ -2116,8 +2129,8 @@ export default class World {
                 Ground.drawTextureVertexZ[i] = z;
             }
 
-            Ground.drawVertexX[i] = Pix3D.originX + (((x << 9) / z) | 0);
-            Ground.drawVertexY[i] = Pix3D.originY + (((y << 9) / z) | 0);
+            Ground.drawVertexX[i] = Pix3D.originX + (((x * zoom) / z) | 0);
+            Ground.drawVertexY[i] = Pix3D.originY + (((y * zoom) / z) | 0);
         }
 
         Pix3D.trans = 0;
