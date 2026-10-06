@@ -23,6 +23,7 @@ export default class Pix3D extends Pix2D {
     static numTextures: number = 0;
     static originX: number = 0;
     static originY: number = 0;
+    static zoom: number = 512; // projection focal length; the client raises/lowers it only while the world renders
     static texelPool: (Int32Array | null)[] | null = null;
     static poolSize: number = 0;
     private static opaque: boolean = false;
@@ -1634,17 +1635,22 @@ export default class Pix3D extends Pix2D {
         const horizontalY: number = tyC - originY;
         const horizontalZ: number = tzC - originZ;
 
+        // Each gradient is dot(n, (sx, sy, zoom)). The screen-space terms are scaled by 512/zoom
+        // instead of scaling the constant term by zoom/512, so u/v/w keep the same int32 headroom
+        // at any zoom (identical to << 8 / << 5 at the default 512).
+        const zoom: number = this.zoom;
+
         let u: number = (horizontalX * originY - horizontalY * originX) << 14;
-        const uStride: number = (horizontalY * originZ - horizontalZ * originY) << 8;
-        const uStepVertical: number = (horizontalZ * originX - horizontalX * originZ) << 5;
+        const uStride: number = (((horizontalY * originZ - horizontalZ * originY) * 131072) / zoom) | 0;
+        const uStepVertical: number = (((horizontalZ * originX - horizontalX * originZ) * 16384) / zoom) | 0;
 
         let v: number = (verticalX * originY - verticalY * originX) << 14;
-        const vStride: number = (verticalY * originZ - verticalZ * originY) << 8;
-        const vStepVertical: number = (verticalZ * originX - verticalX * originZ) << 5;
+        const vStride: number = (((verticalY * originZ - verticalZ * originY) * 131072) / zoom) | 0;
+        const vStepVertical: number = (((verticalZ * originX - verticalX * originZ) * 16384) / zoom) | 0;
 
         let w: number = (verticalY * horizontalX - verticalX * horizontalY) << 14;
-        const wStride: number = (verticalZ * horizontalY - verticalY * horizontalZ) << 8;
-        const wStepVertical: number = (verticalX * horizontalZ - verticalZ * horizontalX) << 5;
+        const wStride: number = (((verticalZ * horizontalY - verticalY * horizontalZ) * 131072) / zoom) | 0;
+        const wStepVertical: number = (((verticalX * horizontalZ - verticalZ * horizontalX) * 16384) / zoom) | 0;
 
         let xStepAB: number = 0;
         let shadeStepAB: number = 0;
