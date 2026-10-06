@@ -94,14 +94,31 @@ const WORLD_ZOOM_STEP = 32;
 
 // Minimap zoom is the map's sample step, minimapZoom + 256 (256 = 4px per tile); lower = zoomed in
 const MINIMAP_ZOOM_DEFAULT = 251;
-const MINIMAP_ZOOM_MIN = 64; // 2x in
-const MINIMAP_ZOOM_MAX = 512; // 1.5x out; further shows past the loaded 104x104 area
+const MINIMAP_ZOOM_MIN = 64; // 4x in
+const MINIMAP_ZOOM_MAX = 512; // 2x out; can show past the loaded 104x104 area
 const MINIMAP_ZOOM_STEP = 0.85; // scale factor per wheel notch
 
 // Middle-mouse camera drag, in camera units per screen pixel (yaw: 2048 = full turn; pitch: 128-383).
 // Directions match touch panning: drag right turns like the left arrow, drag down tilts toward top-down.
 const CAMERA_DRAG_YAW = 2;
 const CAMERA_DRAG_PITCH = 1;
+
+// Status orbs (HP, prayer, run, special) live in the frame between the viewport and the minimap, like
+// OSRS fixed mode. The strip covers backvmid1 (x 516-550) and mapback's left border (x 550-575), from
+// below the compass to the tab bar at y 160; no minimap pixels fall inside it.
+const ORBS_X = 516;
+const ORBS_Y = 37;
+const ORBS_WIDTH = 59;
+const ORBS_HEIGHT = 123;
+const ORB_CENTRE_X = 44; // orb centres, local to the strip
+const ORB_CENTRE_Y = 15;
+const ORB_SPACING = 31;
+const ORB_RADIUS = 12;
+const ORB_ICON_SIZE = 15;
+const ORB_RUN = 2; // clickable orb slots
+const ORB_SPEC = 3;
+
+const SPEC_BAR_OPTION = 'Use @gre@Special Attack'; // the combat tabs' special attack bar button
 
 interface LoginAttempt {
     cancelled: boolean;
@@ -291,6 +308,15 @@ export class Client extends GameShell {
     private minimap: Pix32 | null = null;
     private compass: Pix32 | null = null;
     private mapedge: Pix32 | null = null;
+
+    private orbIcons: (Pix32 | null)[] = [null, null, null, null]; // hitpoints, prayer, run, special
+    private areaOrbs: PixMap | null = null;
+    private orbBackground: Int32Array | null = null; // frame art under the orbs, restored each draw
+    private runButtonOn: number = -1; // controls tab run/walk select buttons, found by their varp
+    private runButtonOff: number = -1;
+    private runVarp: number = -1;
+    private specEnergyVarp: number = -1; // 0-1000, read off the special attack bar's segments
+    private specAttackVarp: number = -1; // 1 while the special attack is primed
     private mapscene: (Pix8 | null)[] = new TypedArray1d(50, null);
     private mapfunction: (Pix32 | null)[] = new TypedArray1d(50, null);
     private hitmarks: (Pix32 | null)[] = new TypedArray1d(20, null);
@@ -1059,6 +1085,9 @@ export class Client extends GameShell {
             this.mapedge = Pix32.depack(media, 'mapedge', 0);
             this.mapedge.trim();
 
+            // Stats tab icons: 6 hitpoints, 4 prayer, 7 agility (run), 0 attack (special)
+            this.orbIcons = [Pix32.depack(media, 'staticons', 6), Pix32.depack(media, 'staticons', 4), Pix32.depack(media, 'staticons', 7), Pix32.depack(media, 'staticons', 0)];
+
             try {
                 for (let i: number = 0; i < 50; i++) {
                     this.mapscene[i] = Pix8.depack(media, 'mapscene', i);
@@ -1211,6 +1240,8 @@ export class Client extends GameShell {
             await this.drawProgress('Unpacking interfaces', 95);
 
             IfType.init(interfaces, media, [this.p11, this.p12, this.b12, this.q8]);
+            this.findRunButtons();
+            this.findSpecVarps();
 
             await this.drawProgress('Preparing game engine', 100);
 
@@ -1626,6 +1657,7 @@ export class Client extends GameShell {
         this.drawArea = null;
         this.areaChat = null;
         this.areaMap = null;
+        this.areaOrbs = null;
         this.areaSide = null;
         this.areaGame = null;
         this.areaBackbase1 = null;
@@ -2230,6 +2262,9 @@ export class Client extends GameShell {
         this.areaMap = new PixMap(172, 156);
         Pix2D.cls();
         this.mapback?.plotSprite(0, 0);
+
+        this.areaOrbs = new PixMap(ORBS_WIDTH, ORBS_HEIGHT);
+        this.orbBackground = this.orbFrameSnapshot();
 
         this.areaSide = new PixMap(190, 261);
 
@@ -3035,6 +3070,21 @@ export class Client extends GameShell {
         if (this.mouseClickButton === 1 && this.mouseClickX >= 550 && this.mouseClickX < 583 && this.mouseClickY >= 4 && this.mouseClickY < 37) {
             this.resetView();
             return;
+        }
+
+        // Orb rows (plate + orb) for run and special; the orb strip ends where the minimap click rect starts
+        if (this.mouseClickButton === 1 && this.mouseClickX >= ORBS_X && this.mouseClickX < ORBS_X + ORBS_WIDTH) {
+            const slotOffset: number = this.mouseClickY - ORBS_Y - ORB_CENTRE_Y;
+            const slot: number = Math.round(slotOffset / ORB_SPACING);
+            if (Math.abs(slotOffset - slot * ORB_SPACING) <= ORB_RADIUS + 1) {
+                if (slot === ORB_RUN) {
+                    this.toggleRun();
+                    return;
+                } else if (slot === ORB_SPEC) {
+                    this.toggleSpec();
+                    return;
+                }
+            }
         }
 
         if (this.minimapState !== 0 || this.mouseClickButton !== 1 || !this.localPlayer) {
@@ -4290,6 +4340,8 @@ export class Client extends GameShell {
         if (this.sceneState === 2) {
             this.minimapDraw();
             this.areaMap?.draw(550, 4);
+            this.orbsDraw();
+            this.areaOrbs?.draw(ORBS_X, ORBS_Y);
         }
 
         if (this.tutFlashIcon !== -1) {
@@ -8910,6 +8962,22 @@ export class Client extends GameShell {
         return action === MiniMenuAction.FRIENDLIST_ADD;
     }
 
+    // Select-type interface button: tell the server, and set its varp locally so the UI updates at once
+    private selectButton(c: number): void {
+        this.out.p1Enc(ClientProt.IF_BUTTON);
+        this.out.p2(c);
+
+        const com: IfType = IfType.list[c];
+        if (com.scripts && com.scripts[0] && com.scripts[0][0] === 5) {
+            const varp: number = com.scripts[0][1];
+            if (com.scriptOperand && this.var[varp] !== com.scriptOperand[0]) {
+                this.var[varp] = com.scriptOperand[0];
+                this.clientVar(varp);
+                this.redrawSide = true;
+            }
+        }
+    }
+
     private doAction(optionId: number): void {
         if (optionId < 0) {
             return;
@@ -9533,18 +9601,7 @@ export class Client extends GameShell {
         }
 
         if (action === MiniMenuAction.SELECT_BUTTON) {
-            this.out.p1Enc(ClientProt.IF_BUTTON);
-            this.out.p2(c);
-
-            const com: IfType = IfType.list[c];
-            if (com.scripts && com.scripts[0] && com.scripts[0][0] === 5) {
-                const varp: number = com.scripts[0][1];
-                if (com.scriptOperand && this.var[varp] !== com.scriptOperand[0]) {
-                    this.var[varp] = com.scriptOperand[0];
-                    this.clientVar(varp);
-                    this.redrawSide = true;
-                }
-            }
+            this.selectButton(c);
         }
 
         if (action === MiniMenuAction.PAUSE_BUTTON) {
@@ -11822,6 +11879,166 @@ export class Client extends GameShell {
             image.scanlinePlotSprite(this.mapback, x + 94 - ((image.owi / 2) | 0) + 4, 83 - y - ((image.ohi / 2) | 0) - 4);
         } else {
             image.plotSprite(x + 94 - ((image.owi / 2) | 0) + 4, 83 - y - ((image.ohi / 2) | 0) - 4);
+        }
+    }
+
+    /** Frame art under the orb strip: backvmid1 left of x 550, mapback's left border from there on. */
+    private orbFrameSnapshot(): Int32Array | null {
+        const vmid: PixMap | null = this.areaBackvmid1;
+        const map: PixMap | null = this.areaMap;
+        if (!vmid || !map) {
+            return null;
+        }
+
+        const pixels: Int32Array = new Int32Array(ORBS_WIDTH * ORBS_HEIGHT);
+        for (let y: number = 0; y < ORBS_HEIGHT; y++) {
+            const screenY: number = ORBS_Y + y;
+            for (let x: number = 0; x < ORBS_WIDTH; x++) {
+                const screenX: number = ORBS_X + x;
+                const vmidX: number = screenX - 516;
+                pixels[x + y * ORBS_WIDTH] = screenX < 550 && vmidX < vmid.width ? vmid.data[vmidX + (screenY - 4) * vmid.width] : map.data[screenX - 550 + (screenY - 4) * map.width];
+            }
+        }
+        return pixels;
+    }
+
+    private orbsDraw(): void {
+        if (!this.areaOrbs || !this.orbBackground) {
+            return;
+        }
+
+        this.areaOrbs.setPixels();
+        this.areaOrbs.data.set(this.orbBackground);
+
+        this.orbDraw(0, this.statEffectiveLevel[3], this.statBaseLevel[3], 0xb01c1c, this.orbIcons[0]);
+        this.orbDraw(1, this.statEffectiveLevel[5], this.statBaseLevel[5], 0x2c9ec8, this.orbIcons[1]);
+        this.orbDraw(ORB_RUN, this.runenergy, 100, this.isRunning() ? 0xe0b020 : 0x6e6448, this.orbIcons[2]);
+
+        // Special: dull when the weapon has none, bright while primed
+        const specEnergy: number = this.specEnergyVarp === -1 ? 0 : (this.var[this.specEnergyVarp] / 10) | 0;
+        const specPrimed: boolean = this.specAttackVarp !== -1 && this.var[this.specAttackVarp] !== 0;
+        const specFill: number = this.findSpecBar(this.sideIcon[0]) === -1 ? 0x4a5a52 : specPrimed ? 0x56e0a8 : 0x2e8a66;
+        this.orbDraw(ORB_SPEC, specEnergy, 100, specFill, this.orbIcons[3]);
+
+        this.areaGame?.setPixels();
+    }
+
+    private orbDraw(slot: number, value: number, max: number, fill: number, icon: Pix32 | null): void {
+        const cx: number = ORB_CENTRE_X;
+        const cy: number = ORB_CENTRE_Y + slot * ORB_SPACING;
+        const ratio: number = max > 0 ? Math.min(Math.max(value / max, 0), 1) : 0;
+
+        // Number plate, tucked under the orb's left edge
+        Pix2D.fillRectTrans(1, cy - 8, cx - 1, 17, 0x000000, 150);
+        this.p11?.centreStringTag(String(value), ((cx - ORB_RADIUS) / 2) | 0, cy + 5, this.orbTextColour(ratio), true);
+
+        // Orb: black rim, dark glass, then the level filled up from the bottom
+        Pix2D.fillCircle(cx, cy, ORB_RADIUS + 1, 0x000000, 256);
+        Pix2D.fillCircle(cx, cy, ORB_RADIUS, 0x262626, 256);
+
+        const filledRows: number = Math.round(ratio * (ORB_RADIUS * 2 + 1));
+        for (let y: number = cy + ORB_RADIUS - filledRows + 1; y <= cy + ORB_RADIUS; y++) {
+            const dy: number = y - cy;
+            const halfWidth: number = Math.sqrt(ORB_RADIUS * ORB_RADIUS - dy * dy) | 0;
+            Pix2D.hline(cx - halfWidth, y, halfWidth * 2 + 1, fill);
+        }
+
+        icon?.scalePlotSprite(cx - (ORB_ICON_SIZE >> 1), cy - (ORB_ICON_SIZE >> 1), ORB_ICON_SIZE, ORB_ICON_SIZE);
+    }
+
+    // OSRS-style: green when full, through yellow at half, to red when empty
+    private orbTextColour(ratio: number): number {
+        const red: number = ratio > 0.5 ? ((1 - ratio) * 2 * 255) | 0 : 255;
+        const green: number = ratio > 0.5 ? 255 : (ratio * 2 * 255) | 0;
+        return (red << 16) | (green << 8);
+    }
+
+    /** The controls tab's run/walk select buttons, identified by their varp (the one with clientcode 7). */
+    private findRunButtons(): void {
+        for (const com of IfType.list) {
+            const script: Uint16Array | null | undefined = com?.scripts?.[0];
+            if (!com || com.buttonType !== ButtonType.BUTTON_SELECT || !com.scriptOperand || !script || script[0] !== 5 || VarpType.list[script[1]]?.clientcode !== 7) {
+                continue;
+            }
+
+            this.runVarp = script[1];
+            if (com.scriptOperand[0] === 1) {
+                this.runButtonOn = com.id;
+            } else if (com.scriptOperand[0] === 0) {
+                this.runButtonOff = com.id;
+            }
+        }
+    }
+
+    private isRunning(): boolean {
+        return this.runVarp !== -1 && this.var[this.runVarp] === 1;
+    }
+
+    // Same as clicking Run/Walk in the controls tab; the server refuses run below 1% energy and resyncs the varp
+    private toggleRun(): void {
+        const button: number = this.isRunning() ? this.runButtonOff : this.runButtonOn;
+        if (button !== -1) {
+            this.selectButton(button);
+        }
+    }
+
+    private isSpecBar(com: IfType | undefined): boolean {
+        return com?.buttonType === ButtonType.BUTTON_OK && com.buttonText === SPEC_BAR_OPTION;
+    }
+
+    /**
+     * The special attack varps, read off the bar's own layer: its text tests sa_attack > 0 and its
+     * ten segments test sa_energy > 99, 199, ... (every combat tab uses the same two varps).
+     */
+    private findSpecVarps(): void {
+        for (const layer of IfType.list) {
+            if (!layer?.children?.some((id: number): boolean => this.isSpecBar(IfType.list[id]))) {
+                continue;
+            }
+
+            for (const id of layer.children) {
+                const com: IfType | undefined = IfType.list[id];
+                const script: Uint16Array | null | undefined = com?.scripts?.[0];
+                if (!com?.scriptOperand || !script || script[0] !== 5) {
+                    continue;
+                }
+
+                if (com.scriptOperand[0] === 0) {
+                    this.specAttackVarp = script[1];
+                } else {
+                    this.specEnergyVarp = script[1];
+                }
+            }
+            return;
+        }
+    }
+
+    /** The visible special attack bar under comId, or -1 when the wielded weapon has none (its layer is hidden). */
+    private findSpecBar(comId: number): number {
+        const com: IfType | undefined = IfType.list[comId];
+        if (!com || com.hide) {
+            return -1;
+        }
+
+        if (this.isSpecBar(com)) {
+            return comId;
+        }
+
+        for (const child of com.children ?? []) {
+            const found: number = this.findSpecBar(child);
+            if (found !== -1) {
+                return found;
+            }
+        }
+        return -1;
+    }
+
+    // Same as clicking the combat tab's special attack bar (dragon battleaxe fires instantly, as there)
+    private toggleSpec(): void {
+        const bar: number = this.findSpecBar(this.sideIcon[0]);
+        if (bar !== -1) {
+            this.out.p1Enc(ClientProt.IF_BUTTON);
+            this.out.p2(bar);
         }
     }
 
