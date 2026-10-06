@@ -103,6 +103,8 @@ const MINIMAP_ZOOM_STEP = 0.85; // scale factor per wheel notch
 const CAMERA_DRAG_YAW = 2;
 const CAMERA_DRAG_PITCH = 1;
 
+const WHEEL_SCROLL_STEP = 30; // pixels per wheel notch for scrollable interfaces and chat history (~2 lines)
+
 // Status orbs (HP, prayer, run, special) live in the frame between the viewport and the minimap, like
 // OSRS fixed mode. The strip covers backvmid1 (x 516-550) and mapback's left border (x 550-575), from
 // below the compass to the tab bar at y 160; no minimap pixels fall inside it.
@@ -302,6 +304,7 @@ export class Client extends GameShell {
     private minimapZoom: number = MINIMAP_ZOOM_DEFAULT - 256;
     private minimapZoomTarget: number = MINIMAP_ZOOM_DEFAULT - 256; // minimapZoom eases toward this each tick
     private worldZoom: number = WORLD_ZOOM_DEFAULT;
+    private wheelScrollCom: IfType | null = null; // innermost scrollable layer under the mouse, found by buildMinimenu
 
     private worldUpdateNum: number = 0;
 
@@ -2685,8 +2688,18 @@ export class Client extends GameShell {
             this.out.p1Enc(ClientProt.NO_TIMEOUT);
         }
 
-        if (this.wheelRotation !== 0) {
-            if (this.mouseX > 4 && this.mouseY > 4 && this.mouseX < 516 && this.mouseY < 338) {
+        if (this.wheelRotation !== 0 && !this.isMenuOpen) {
+            if (this.wheelScrollCom) {
+                // Wheel up scrolls up; drawInterface clamps too, but clamp here so a burst of notches doesn't overshoot
+                const com: IfType = this.wheelScrollCom;
+                com.scrollPos = Math.max(0, Math.min(com.scrollPos - this.wheelRotation * WHEEL_SCROLL_STEP, com.scrollHeight - com.height));
+                this.redrawSide = true;
+                this.redrawChat = true;
+            } else if (this.chatModalId === -1 && this.mouseX > 17 && this.mouseY > 357 && this.mouseX < 496 && this.mouseY < 453) {
+                // Chat history: chatScrollPos counts up from the newest line
+                this.chatScrollPos = Math.max(0, Math.min(this.chatScrollPos + this.wheelRotation * WHEEL_SCROLL_STEP, this.chatScrollHeight - 77));
+                this.redrawChat = true;
+            } else if (this.mouseX > 4 && this.mouseY > 4 && this.mouseX < 516 && this.mouseY < 338) {
                 this.worldZoom += this.wheelRotation * WORLD_ZOOM_STEP;
                 if (this.worldZoom < WORLD_ZOOM_MIN) {
                     this.worldZoom = WORLD_ZOOM_MIN;
@@ -2788,6 +2801,8 @@ export class Client extends GameShell {
     }
 
     private buildMinimenu(): void {
+        this.wheelScrollCom = null;
+
         if (this.objDragArea !== 0) {
             return;
         }
@@ -10097,6 +10112,11 @@ export class Client extends GameShell {
             }
 
             if (child.type === 0) {
+                // Checked before recursing so a nested scrollable layer overrides its parent; includes the scrollbar
+                if (child.scrollHeight > child.height && !child.hide && mouseX >= childX && mouseY >= childY && mouseX < childX + child.width + 16 && mouseY < childY + child.height) {
+                    this.wheelScrollCom = child;
+                }
+
                 this.addComponentOptions(child, mouseX, mouseY, childX, childY, child.scrollPos);
 
                 if (child.scrollHeight > child.height) {
