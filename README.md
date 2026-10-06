@@ -24,7 +24,7 @@ tab is throttled by the browser, which starves every bot in it.
 
 My changes (ineedbots) are:
 - Pressing enter on the login screen at the password prompt will attempt a login
-- All anti macro removed, no more random camera and minimap nudges
+- All anti macro removed, no more random camera minimap and option text nudges
 - Mouse scrolling will:
   - Scroll interfaces
   - Zoom the world
