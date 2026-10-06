@@ -3,8 +3,8 @@ import Pix2D from '#/client/graphics/Pix2D.js';
 
 export default class PixMap {
     readonly data: Int32Array;
-    private readonly width: number;
-    private readonly height: number;
+    readonly width: number;
+    readonly height: number;
     private readonly img: ImageData;
 
     private readonly ctx: CanvasRenderingContext2D;
