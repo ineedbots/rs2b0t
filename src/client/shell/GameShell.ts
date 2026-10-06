@@ -30,6 +30,10 @@ export default abstract class GameShell {
     protected nextMouseClickTime: number = 0;
     public mouseClickTime: number = 0;
 
+    public wheelRotation: number = 0;        // accumulated scroll clicks
+    protected nextWheelRotation: number = 0; // pending, consumed in mainloop
+
+    public shiftHeld: boolean = false;
     public keyHeld: number[] = [];
     protected keyQueue: number[] = [];
     protected keyQueueReadPos: number = 0;
@@ -105,6 +109,7 @@ export default abstract class GameShell {
         canvas.onpointermove = this.onpointermove.bind(this);
         window.onmouseup = this.windowMouseUp.bind(this);
         window.onmousemove = this.windowMouseMove.bind(this);
+        canvas.addEventListener('wheel', this.onwheel.bind(this), { passive: false });
 
         if (this.isTouchDevice) {
             canvas.style.touchAction = 'pinch-zoom';
@@ -185,6 +190,10 @@ export default abstract class GameShell {
                 this.mouseClickY = this.nextMouseClickY;
                 this.mouseClickTime = this.nextMouseClickTime;
                 this.nextMouseClickButton = 0;
+                
+                // add:
+                this.wheelRotation = this.nextWheelRotation;
+                this.nextWheelRotation = 0;
 
                 await this.mainloop();
 
@@ -244,6 +253,7 @@ export default abstract class GameShell {
         canvas.oncontextmenu = null;
         window.onmouseup = null;
         window.onmousemove = null;
+        canvas.removeEventListener('wheel', this.onwheel);
     }
 
     protected setFramerate(rate: number) {
@@ -294,6 +304,36 @@ export default abstract class GameShell {
         await sleep(5);
     }
 
+    private onwheel(e: WheelEvent): void {
+        if (e.clientX < 0 || e.clientY < 0) {
+            return;
+        }
+
+        this.getMousePos(e);
+
+        // Normalize: some browsers give lines/pages instead of pixels
+        let delta = e.deltaY;
+        if (e.deltaMode === 1) {
+            delta *= 40; // lines → pixels
+        } else if (e.deltaMode === 2) {
+            delta *= 400; // pages → pixels
+        }
+
+        this.wheel(this.absMouseX, this.absMouseY, delta, e);
+
+        if (!CanvasEnabledKeys.includes(e.type)) {
+            e.preventDefault();
+        }
+    }
+
+    protected wheel(x: number, y: number, delta: number, _e: WheelEvent): void {
+        this.idleTimer = performance.now();
+        this.mouseX = x;
+        this.mouseY = y;
+
+        this.nextWheelRotation += delta < 0 ? 1 : (delta > 0 ? -1 : 0);
+    }
+
     private onmousedown(e: MouseEvent) {
         if (e.clientX < 0 || e.clientY < 0) {
             return;
@@ -301,11 +341,23 @@ export default abstract class GameShell {
 
         this.getMousePos(e);
 
+        if (e.button === 1) {
+            e.preventDefault(); // no browser autoscroll; middle drag is the camera
+        }
+
         this.mouseDown(this.absMouseX, this.absMouseY, e);
     }
 
     protected mouseDown(x: number, y: number, e: MouseEvent) {
         this.idleTimer = performance.now();
+
+        // Middle button never clicks; Client uses it to drag the camera
+        if (e.button === 1) {
+            this.mouseX = x;
+            this.mouseY = y;
+            return;
+        }
+
         this.nextMouseClickX = x;
         this.nextMouseClickY = y;
         this.nextMouseClickTime = performance.now();
@@ -448,6 +500,8 @@ export default abstract class GameShell {
             ch = 9;
         } else if (keyCode.code === 10) {
             ch = 10;
+        } else if (keyCode.code === 16) {
+            this.shiftHeld = true;
         }
 
         if (ch > 0 && ch < 128) {
@@ -503,6 +557,8 @@ export default abstract class GameShell {
             ch = 9;
         } else if (keyCode.code === 10) {
             ch = 10;
+        } else if (keyCode.code === 16) {
+            this.shiftHeld = false;
         }
 
         if (ch > 0 && ch < 128) {

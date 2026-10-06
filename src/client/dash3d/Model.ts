@@ -1677,6 +1677,7 @@ export default class Model extends ModelSource {
         const cosEyePitch: number = Pix3D.cosTable[eyePitch];
 
         const midZ: number = (eyeY * sinEyePitch + eyeZ * cosEyePitch) >> 16;
+        const zoom: number = Pix3D.zoom;
 
         for (let v: number = 0; v < this.numPoints; v++) {
             let x: number = this.pointX![v];
@@ -1711,8 +1712,8 @@ export default class Model extends ModelSource {
             y = tmp;
 
             Model.vertexScreenZ[v] = z - midZ;
-            Model.vertexScreenX[v] = Pix3D.originX + (((x << 9) / z) | 0);
-            Model.vertexScreenY[v] = Pix3D.originY + (((y << 9) / z) | 0);
+            Model.vertexScreenX[v] = Pix3D.originX + (((x * zoom) / z) | 0);
+            Model.vertexScreenY[v] = Pix3D.originY + (((y * zoom) / z) | 0);
 
             if (this.numT > 0) {
                 Model.vertexViewSpaceX[v] = x;
@@ -1737,13 +1738,14 @@ export default class Model extends ModelSource {
             return;
         }
 
+        const zoom: number = Pix3D.zoom;
         const midX: number = (relativeZ * sinEyeYaw + relativeX * cosEyeYaw) >> 16;
-        let leftX: number = (midX - this.radius) << 9;
+        let leftX: number = (midX - this.radius) * zoom;
         if (((leftX / maxZ) | 0) >= Pix2D.maxX) {
             return;
         }
 
-        let rightX: number = (midX + this.radius) << 9;
+        let rightX: number = (midX + this.radius) * zoom;
         if (((rightX / maxZ) | 0) <= -Pix2D.maxX) {
             return;
         }
@@ -1751,13 +1753,13 @@ export default class Model extends ModelSource {
         const midY: number = (relativeY * cosEyePitch - zPrime * sinEyePitch) >> 16;
         const radiusSinEyePitch: number = (this.radius * sinEyePitch) >> 16;
 
-        let bottomY: number = (midY + radiusSinEyePitch) << 9;
+        let bottomY: number = (midY + radiusSinEyePitch) * zoom;
         if (((bottomY / maxZ) | 0) <= -Pix2D.maxY) {
             return;
         }
 
         const yPrime: number = radiusSinEyePitch + ((this.minY * cosEyePitch) >> 16);
-        let topY: number = (midY - yPrime) << 9;
+        let topY: number = (midY - yPrime) * zoom;
         if (((topY / maxZ) | 0) >= Pix2D.maxY) {
             return;
         }
@@ -1837,8 +1839,8 @@ export default class Model extends ModelSource {
             Model.vertexScreenZ[v] = z - midZ;
 
             if (z >= 50) {
-                Model.vertexScreenX[v] = centerX + (((x << 9) / z) | 0);
-                Model.vertexScreenY[v] = centerY + (((y << 9) / z) | 0);
+                Model.vertexScreenX[v] = centerX + (((x * zoom) / z) | 0);
+                Model.vertexScreenY[v] = centerY + (((y * zoom) / z) | 0);
                 if (typecode !== 0 && typecode === Model.trackTypecode) {
                     Model.trackExtend(Model.vertexScreenX[v], Model.vertexScreenY[v]);
                 }
@@ -2168,6 +2170,7 @@ export default class Model extends ModelSource {
 
         const centerX: number = Pix3D.originX;
         const centerY: number = Pix3D.originY;
+        const zoom: number = Pix3D.zoom;
 
         const a: number = this.faceVertexA![face];
         const b: number = this.faceVertexB![face];
@@ -2188,15 +2191,15 @@ export default class Model extends ModelSource {
 
             if (zC >= 50) {
                 const scalar: number = (50 - zA) * Pix3D.divTable2[zC - zA];
-                Model.clippedX[elements] = centerX + ((((xA + (((Model.vertexViewSpaceX[c] - xA) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yA + (((Model.vertexViewSpaceY[c] - yA) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xA + (((Model.vertexViewSpaceX[c] - xA) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yA + (((Model.vertexViewSpaceY[c] - yA) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourA + (((this.faceColourC![face] - colourA) * scalar) >> 16);
             }
 
             if (zB >= 50) {
                 const scalar: number = (50 - zA) * Pix3D.divTable2[zB - zA];
-                Model.clippedX[elements] = centerX + ((((xA + (((Model.vertexViewSpaceX[b] - xA) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yA + (((Model.vertexViewSpaceY[b] - yA) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xA + (((Model.vertexViewSpaceX[b] - xA) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yA + (((Model.vertexViewSpaceY[b] - yA) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourA + (((this.faceColourB![face] - colourA) * scalar) >> 16);
             }
         }
@@ -2212,15 +2215,15 @@ export default class Model extends ModelSource {
 
             if (zA >= 50) {
                 const scalar: number = (50 - zB) * Pix3D.divTable2[zA - zB];
-                Model.clippedX[elements] = centerX + ((((xB + (((Model.vertexViewSpaceX[a] - xB) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yB + (((Model.vertexViewSpaceY[a] - yB) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xB + (((Model.vertexViewSpaceX[a] - xB) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yB + (((Model.vertexViewSpaceY[a] - yB) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourB + (((this.faceColourA![face] - colourB) * scalar) >> 16);
             }
 
             if (zC >= 50) {
                 const scalar: number = (50 - zB) * Pix3D.divTable2[zC - zB];
-                Model.clippedX[elements] = centerX + ((((xB + (((Model.vertexViewSpaceX[c] - xB) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yB + (((Model.vertexViewSpaceY[c] - yB) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xB + (((Model.vertexViewSpaceX[c] - xB) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yB + (((Model.vertexViewSpaceY[c] - yB) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourB + (((this.faceColourC![face] - colourB) * scalar) >> 16);
             }
         }
@@ -2236,15 +2239,15 @@ export default class Model extends ModelSource {
 
             if (zB >= 50) {
                 const scalar: number = (50 - zC) * Pix3D.divTable2[zB - zC];
-                Model.clippedX[elements] = centerX + ((((xC + (((Model.vertexViewSpaceX[b] - xC) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yC + (((Model.vertexViewSpaceY[b] - yC) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xC + (((Model.vertexViewSpaceX[b] - xC) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yC + (((Model.vertexViewSpaceY[b] - yC) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourC + (((this.faceColourB![face] - colourC) * scalar) >> 16);
             }
 
             if (zA >= 50) {
                 const scalar: number = (50 - zC) * Pix3D.divTable2[zA - zC];
-                Model.clippedX[elements] = centerX + ((((xC + (((Model.vertexViewSpaceX[a] - xC) * scalar) >> 16)) << 9) / 50) | 0);
-                Model.clippedY[elements] = centerY + ((((yC + (((Model.vertexViewSpaceY[a] - yC) * scalar) >> 16)) << 9) / 50) | 0);
+                Model.clippedX[elements] = centerX + ((((xC + (((Model.vertexViewSpaceX[a] - xC) * scalar) >> 16)) * zoom) / 50) | 0);
+                Model.clippedY[elements] = centerY + ((((yC + (((Model.vertexViewSpaceY[a] - yC) * scalar) >> 16)) * zoom) / 50) | 0);
                 Model.clippedColour[elements++] = colourC + (((this.faceColourA![face] - colourC) * scalar) >> 16);
             }
         }
