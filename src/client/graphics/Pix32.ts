@@ -505,6 +505,30 @@ export default class Pix32 extends Pix2D {
         }
     }
 
+    // Nearest-neighbour draw of the full (untrimmed owi x ohi) sprite box scaled into w x h at (x, y)
+    scalePlotSprite(x: number, y: number, w: number, h: number): void {
+        for (let dy: number = 0; dy < h; dy++) {
+            const py: number = y + dy;
+            const sy: number = (((dy * this.ohi) / h) | 0) - this.yof;
+            if (py < Pix2D.clipMinY || py >= Pix2D.clipMaxY || sy < 0 || sy >= this.hi) {
+                continue;
+            }
+
+            for (let dx: number = 0; dx < w; dx++) {
+                const px: number = x + dx;
+                const sx: number = (((dx * this.owi) / w) | 0) - this.xof;
+                if (px < Pix2D.clipMinX || px >= Pix2D.clipMaxX || sx < 0 || sx >= this.wi) {
+                    continue;
+                }
+
+                const rgb: number = this.data[sx + sy * this.wi];
+                if (rgb !== 0) {
+                    Pix2D.pixels[px + py * Pix2D.width] = rgb;
+                }
+            }
+        }
+    }
+
     scanlinePlotSprite(mask: Pix8, x: number, y: number): void {
         x |= 0;
         y |= 0;
