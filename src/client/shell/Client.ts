@@ -205,6 +205,7 @@ export class Client extends GameShell {
     private focusIn: boolean = false;
 
     private showFps: boolean = false;
+    private hideRoofs: boolean = false;
     private rebootTimer: number = 0;
 
     private hintType: number = 0;
@@ -3444,6 +3445,9 @@ export class Client extends GameShell {
                                 this.showFps = true;
                             } else if (this.chatInput === '::fpsoff') {
                                 this.showFps = false;
+                            } else if (this.chatInput === '::toggleroof') {
+                                this.hideRoofs = !this.hideRoofs;
+                                this.addChat(0, this.hideRoofs ? 'Roofs are now hidden.' : 'Roofs are now shown.', '');
                             } else if (this.chatInput.startsWith('::fps ')) {
                                 try {
                                     const desiredFps = parseInt(this.chatInput.substring(6)) || 50;
@@ -4559,6 +4563,11 @@ export class Client extends GameShell {
             level = this.roofCheck2();
         } else {
             level = this.roofCheck();
+        }
+
+        // Only draw up to the player's level, like low memory mode does
+        if (this.hideRoofs) {
+            level = this.minusedlevel;
         }
 
         const camX: number = this.camX;
