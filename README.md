@@ -34,6 +34,7 @@ My changes (ineedbots) are:
 - Dragging with middle mouse button on the world will control the camera pitch and yaw
 - Added MuleTrader script
 - Added minimap orbs, HP, prayer, run and spec. Run and spec are clickable
+- ::toggleroof
 
 Clauded...
 
