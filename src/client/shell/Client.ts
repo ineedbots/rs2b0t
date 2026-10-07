@@ -3567,6 +3567,10 @@ export class Client extends GameShell {
                             this.chatInput = '';
                             this.redrawChat = true;
                         }
+                    } else if (key === 32) {
+                        this.continueChatDialog();
+                    } else if (key >= 49 && key <= 57) {
+                        this.selectChatOption(key - 49);
                     }
                 }
             } while ((key < 97 || key > 122) && (key < 65 || key > 90) && (key < 48 || key > 57) && key !== 32);
@@ -3575,6 +3579,70 @@ export class Client extends GameShell {
                 this.reportAbuseInput = this.reportAbuseInput + String.fromCharCode(key);
             }
         }
+    }
+
+    // Space presses the chat modal's "Click here to continue", same packet as clicking it
+    private continueChatDialog(): void {
+        if (this.resumedPauseButton) {
+            return;
+        }
+
+        const com: IfType | undefined = this.getChatModalButtons().find(c => c.buttonType === ButtonType.BUTTON_CONTINUE);
+        if (!com) {
+            return;
+        }
+
+        this.out.p1Enc(ClientProt.RESUME_PAUSEBUTTON);
+        this.out.p2(com.id);
+        this.resumedPauseButton = true;
+    }
+
+    // Number keys pick the nth NPC dialogue option, counted top to bottom as drawn
+    private selectChatOption(index: number): void {
+        const options: IfType[] = this.getChatModalButtons().filter(c => c.buttonType === ButtonType.BUTTON_OK && c.type === ComponentType.TYPE_TEXT);
+        const com: IfType | undefined = options[index];
+        if (!com) {
+            return;
+        }
+
+        const notify = com.clientCode <= 0 || this.clientButton(com);
+        if (notify) {
+            this.out.p1Enc(ClientProt.IF_BUTTON);
+            this.out.p2(com.id);
+        }
+    }
+
+    // Visible buttons in the chat modal sorted by drawn position, skipping hidden layers like addComponentOptions does
+    private getChatModalButtons(): IfType[] {
+        const found: { com: IfType; x: number; y: number }[] = [];
+
+        const visit = (com: IfType, x: number, y: number): void => {
+            if (com.type !== ComponentType.TYPE_LAYER || !com.children || com.hide || !com.childX || !com.childY) {
+                return;
+            }
+
+            for (let i: number = 0; i < com.children.length; i++) {
+                const child: IfType = IfType.list[com.children[i]];
+                if (!child) {
+                    continue;
+                }
+
+                const childX: number = com.childX[i] + x + child.x;
+                const childY: number = com.childY[i] + y - com.scrollPos + child.y;
+
+                if (child.type === ComponentType.TYPE_LAYER) {
+                    visit(child, childX, childY);
+                } else if (child.buttonType > 0) {
+                    found.push({ com: child, x: childX, y: childY });
+                }
+            }
+        };
+
+        if (this.chatModalId !== -1) {
+            visit(IfType.list[this.chatModalId], 0, 0);
+        }
+
+        return found.sort((a, b) => a.y - b.y || a.x - b.x).map(f => f.com);
     }
 
     private lag() {
