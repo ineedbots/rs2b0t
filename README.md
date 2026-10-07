@@ -36,6 +36,9 @@ My changes (ineedbots) are:
 - Added minimap orbs, HP, prayer, run and spec. Run and spec are clickable
 - ::toggleroof
 - ESC key closes interface
+- NPC chat keyboard controls:
+  - Space presses "Click here to continue"
+  - Number keys 1-9 select a dialogue option
 
 Clauded...
 
