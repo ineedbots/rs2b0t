@@ -35,6 +35,7 @@ My changes (ineedbots) are:
 - Added MuleTrader script
 - Added minimap orbs, HP, prayer, run and spec. Run and spec are clickable
 - ::toggleroof
+- ESC key closes interface
 
 Clauded...
 
