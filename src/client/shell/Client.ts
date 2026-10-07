@@ -3322,6 +3322,13 @@ export class Client extends GameShell {
                         return;
                     }
 
+                    if (key === 27) {
+                        if (this.mainModalId !== -1 || this.sideModalId !== -1 || this.chatModalId !== -1) {
+                            this.closeModal();
+                        }
+                        continue;
+                    }
+
                     if (this.mainModalId !== -1 && this.mainModalId === this.reportAbuseComId) {
                         if (key === 8 && this.reportAbuseInput.length > 0) {
                             this.reportAbuseInput = this.reportAbuseInput.substring(0, this.reportAbuseInput.length - 1);
