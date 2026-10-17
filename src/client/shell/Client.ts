@@ -2617,7 +2617,7 @@ export class Client extends GameShell {
                 this.logoutTimer = 250;
                 this.idleTimer += 10_000;
 
-                this.out.p1Enc(ClientProt.IDLE_TIMER);
+                // this.out.p1Enc(ClientProt.IDLE_TIMER);
             }
         }
 
