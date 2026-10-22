@@ -128,7 +128,7 @@ export async function startLiveProxy(options: LiveProxyOptions = {}) {
 
     const listen = (port: number) =>
         Bun.serve<WsData, Record<string, never>>({
-            hostname: '127.0.0.1',
+            hostname: '0.0.0.0',
             port,
             idleTimeout: 0,
             async fetch(req, srv) {
