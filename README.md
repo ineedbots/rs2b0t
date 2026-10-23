@@ -39,6 +39,9 @@ My changes (ineedbots) are:
 - NPC chat keyboard controls:
   - Space presses "Click here to continue"
   - Number keys 1-9 select a dialogue option
+- XP drops
+
+![alt text](image.png)
 
 Clauded...
 
