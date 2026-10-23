@@ -9,6 +9,7 @@ import MobileKeyboard from '#/client/shell/MobileKeyboard.js';
 import MouseTracking from '#/client/shell/MouseTracking.js';
 import Skill from '#/client/shell/Skill.js';
 import TitleFlames from '#/client/shell/TitleFlames.js';
+import XpDrops from '#/client/shell/XpDrops.js';
 
 import FloType from '#/client/config/FloType.js';
 import SeqType, { PostanimMove, PreanimMove, RestartMode } from '#/client/config/SeqType.js';
@@ -494,6 +495,8 @@ export class Client extends GameShell {
     private statEffectiveLevel: Int32Array = new Int32Array(Skill.count);
     private statBaseLevel: Int32Array = new Int32Array(Skill.count);
     private statXP: Int32Array = new Int32Array(Skill.count);
+    private readonly xpDrops: XpDrops = new XpDrops();
+    private skillIcons: (Pix32 | null)[] = new TypedArray1d(Skill.count, null);
     /** Login attempt that supplied each stat slot; prevents stale relog data from becoming ready. */
     private statSessionGeneration: number = 0;
     private modalCloseGeneration: number = 0;
@@ -1091,6 +1094,14 @@ export class Client extends GameShell {
 
             // Stats tab icons: 6 hitpoints, 4 prayer, 7 agility (run), 0 attack (special)
             this.orbIcons = [Pix32.depack(media, 'staticons', 6), Pix32.depack(media, 'staticons', 4), Pix32.depack(media, 'staticons', 7), Pix32.depack(media, 'staticons', 0)];
+
+            // Sprite order follows the stats tab rather than the protocol's skill order.
+            const statIconIndices = [0, 2, 1, 6, 3, 4, 5, 15, 17, 11, 14, 16, 10, 13, 12, 8, 7, 9];
+            for (let skill = 0; skill < statIconIndices.length; skill++) {
+                this.skillIcons[skill] = Pix32.depack(media, 'staticons', statIconIndices[skill]);
+            }
+            this.skillIcons[18] = Pix32.depack(media, 'staticons2', 1); // Slayer
+            this.skillIcons[20] = Pix32.depack(media, 'staticons2', 0); // Runecraft
 
             try {
                 for (let i: number = 0; i < 50; i++) {
@@ -1836,6 +1847,7 @@ export class Client extends GameShell {
         // accepted login its own generation so consumers can distinguish that
         // retained snapshot from UPDATE_STAT packets belonging to this attempt.
         this.statSessionGeneration++;
+        this.xpDrops.clear();
         this.invUpdateState.clear();
 
         if (!reconnect) {
@@ -2741,6 +2753,7 @@ export class Client extends GameShell {
 
     private async logout(): Promise<void> {
         this.cancelLoginAttempt();
+        this.xpDrops.clear();
         if (this.stream) {
             this.stream.close();
         }
@@ -5283,6 +5296,20 @@ export class Client extends GameShell {
         }
     }
 
+    private drawXpDrops(): void {
+        for (const drop of this.xpDrops.visible()) {
+            const text = '+' + drop.amount.toLocaleString('en-US') + ' XP';
+            const font = this.p12;
+            if (!font) {
+                continue;
+            }
+            const width = 18 + 5 + font.stringWid(text);
+            const x = 500 - width;
+            this.skillIcons[drop.skill]?.scalePlotSprite(x, drop.y - 14, 18, 18);
+            font.drawStringTag(text, x + 23, drop.y, Colour.WHITE, true);
+        }
+    }
+
     private otherOverlays(): void {
         this.drawPrivateMessages();
 
@@ -5309,6 +5336,7 @@ export class Client extends GameShell {
             this.drawInterface(IfType.list[this.mainModalId], 0, 0, 0);
         }
 
+        this.drawXpDrops();
         this.getSpecialArea();
 
         if (!this.isMenuOpen) {
@@ -7181,6 +7209,7 @@ export class Client extends GameShell {
                 const xp: number = this.in.g4();
                 const level: number = this.in.g1();
 
+                this.xpDrops.update(stat, xp);
                 this.statXP[stat] = xp;
                 this.statEffectiveLevel[stat] = level;
                 this.statBaseLevel[stat] = 1;
