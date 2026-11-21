@@ -462,11 +462,20 @@ export default abstract class GameShell {
     protected windowMouseMove(_e: MouseEvent) {
     }
 
+    protected handleKeyDown(_e: KeyboardEvent): boolean {
+        return false;
+    }
+
     private onkeydown(e: KeyboardEvent) {
         this.idleTimer = performance.now();
 
         const keyCode = KeyCodes.get(e.key);
         if (!keyCode || (e.code.length === 0 && !e.isTrusted)) {
+            return;
+        }
+
+        if (this.handleKeyDown(e)) {
+            e.preventDefault();
             return;
         }
 

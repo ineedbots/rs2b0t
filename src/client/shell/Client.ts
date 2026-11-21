@@ -3171,6 +3171,27 @@ export class Client extends GameShell {
         this.sendCamera = true; // report the new camera like arrow-key rotation does
     }
 
+    protected override handleKeyDown(e: KeyboardEvent): boolean {
+        if (!this.ingame || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) {
+            return false;
+        }
+
+        // Function keys skip Inventory (3) and the unused bottom-left tab (7).
+        const tabs = [0, 1, 2, 4, 5, 6, 10, 8, 9, 11, 12, 13];
+        const functionKey = /^F([1-9]|1[0-2])$/.exec(e.key);
+        const tab = e.key === 'Escape' ? 3 : functionKey ? tabs[Number(functionKey[1]) - 1] : -1;
+        if (tab === -1) {
+            return false;
+        }
+
+        if (this.sideIcon[tab] !== -1) {
+            this.activeIcon = tab;
+            this.redrawSide = true;
+            this.redrawIcons = true;
+        }
+        return true;
+    }
+
     private iconLoop(): void {
         if (this.mouseClickButton !== 1) {
             return;

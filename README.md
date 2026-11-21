@@ -40,6 +40,7 @@ My changes (ineedbots) are:
   - Space presses "Click here to continue"
   - Number keys 1-9 select a dialogue option
 - XP drops
+- ESC + F1 - F12 Gametab keybinds
 
 ![alt text](image.png)
 
