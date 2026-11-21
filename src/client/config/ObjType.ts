@@ -11,6 +11,28 @@ import Pix32 from '#/client/graphics/Pix32.js';
 
 import { TypedArray1d } from '#/client/util/Arrays.js';
 
+const GRIMY_HERB_NAMES: Readonly<Record<number, string>> = {
+    199: 'Grimy guam leaf',
+    201: 'Grimy marrentill',
+    203: 'Grimy tarromin',
+    205: 'Grimy harralander',
+    207: 'Grimy ranarr weed',
+    209: 'Grimy irit leaf',
+    211: 'Grimy avantoe',
+    213: 'Grimy kwuarm',
+    215: 'Grimy cadantine',
+    217: 'Grimy dwarf weed',
+    219: 'Grimy torstol',
+    1525: 'Grimy snake weed',
+    1527: 'Grimy ardrigal',
+    1529: 'Grimy sito foil',
+    1531: 'Grimy volencia moss',
+    1533: 'Grimy rogues purse',
+    2485: 'Grimy lantadyme',
+    3049: 'Grimy toadflax',
+    3051: 'Grimy snapdragon'
+};
+
 export default class ObjType {
     static numDefinitions: number = 0;
     static idx: Int32Array | null = null;
@@ -103,6 +125,11 @@ export default class ObjType {
         obj.id = id;
         obj.reset();
         obj.decode(this.dat);
+
+        // Notes inherit this name through genCert when they load their linked herb.
+        if (GRIMY_HERB_NAMES[id]) {
+            obj.name = GRIMY_HERB_NAMES[id];
+        }
 
         if (obj.certtemplate !== -1) {
             obj.genCert();

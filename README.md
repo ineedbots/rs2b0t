@@ -41,6 +41,7 @@ My changes (ineedbots) are:
   - Number keys 1-9 select a dialogue option
 - XP drops
 - ESC + F1 - F12 Gametab keybinds
+- Named grimy herbs
 
 ![alt text](image.png)
 
