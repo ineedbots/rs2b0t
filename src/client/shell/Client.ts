@@ -3176,10 +3176,21 @@ export class Client extends GameShell {
             return false;
         }
 
+        if (e.key === 'Escape') {
+            if (this.mainModalId !== -1 || this.sideModalId !== -1 || this.chatModalId !== -1) {
+                this.closeModal();
+            } else if (this.sideIcon[3] !== -1) {
+                this.activeIcon = 3;
+                this.redrawSide = true;
+                this.redrawIcons = true;
+            }
+            return true;
+        }
+
         // Function keys skip Inventory (3) and the unused bottom-left tab (7).
         const tabs = [0, 1, 2, 4, 5, 6, 10, 8, 9, 11, 12, 13];
         const functionKey = /^F([1-9]|1[0-2])$/.exec(e.key);
-        const tab = e.key === 'Escape' ? 3 : functionKey ? tabs[Number(functionKey[1]) - 1] : -1;
+        const tab = functionKey ? tabs[Number(functionKey[1]) - 1] : -1;
         if (tab === -1) {
             return false;
         }
