@@ -1550,9 +1550,12 @@ export class Client extends GameShell {
                     }
 
                     if (key === 9 || key === 10 || key === 13) {
-                        // this.loginSelect = 0;
+                        if (this.loginUser.length > 0 && this.loginPass.length > 0) {
+                            this.startLogin(this.loginUser, this.loginPass);
+                        } else {
+                            this.loginSelect = 0;
+                        }
                         
-                        this.startLogin(this.loginUser, this.loginPass);
                         return;
                     }
 
